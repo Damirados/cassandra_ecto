@@ -42,7 +42,7 @@ defmodule CassandraEcto.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:cqerl, github: "matehat/cqerl", tag: "v1.0.2", only: :test},
+      {:cqerl, github: "damirados/cqerl"},
       {:cassandrex, "~> 0.1.0"},
       {:ecto, "~> 2.1.0"},
       {:espec, "~> 1.2.0", only: :test},
