@@ -70,12 +70,22 @@ defmodule Cassandra.Ecto.Helper do
     |> Enum.join(joiner)
   end
 
-  def get_names(query), do:
-    get_update_names(query) ++ get_where_names(query)
+  def get_names(query), do: get_names(query, [])
+  def get_names(query, opts) do
+    update_names = get_update_names(query)
+    where_names =
+      case Keyword.get(opts, :named) do
+         names when is_list(names) ->
+           names |> Enum.with_index(length(update_names)) |> Enum.map(fn {k,v} -> {v,k} end)
+         _ ->
+           get_where_names(query)
+      end
+    update_names ++ where_names
     |> List.flatten
     |> Enum.sort(&(elem(&1, 0) < elem(&2, 0)))
     |> Enum.unzip
     |> elem(1)
+  end
 
   def process_row(row, process, fields) do
     Enum.map_reduce(fields, row, fn
@@ -98,7 +108,7 @@ defmodule Cassandra.Ecto.Helper do
 
   defp get_where_names(%Query{wheres: wheres}), do:
     Enum.map(wheres, fn
-      %{expr: expr} -> get_where_names(expr)
+      %{expr: expr} -> get_where_names(IO.inspect expr)
     end)
   defp get_where_names({_fun, _, [{{:., _, [{:&, _, [_idx]}, field]}, _, []}, {:^, [], [ix]}]}), do:
     {ix, field}

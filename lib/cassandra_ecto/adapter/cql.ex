@@ -9,9 +9,10 @@ defmodule Cassandra.Ecto.Adapter.CQL do
 
   def to_cql(command, query, opts \\ [])
   def to_cql(:all, query, opts) do
+    named    = named(opts)
     from     = from(query)
     select   = select(query)
-    where    = where(query)
+    where    = where(query, named)
     order_by = order_by(query)
     limit    = limit(query)
     check_support!(:offset, :offset, query)
@@ -22,15 +23,18 @@ defmodule Cassandra.Ecto.Adapter.CQL do
     allow_filtering = allow_filtering(opts)
     per_partition_limit = per_partition_limit(opts)
     assemble([select, from, where, order_by, limit, per_partition_limit, allow_filtering])
+    |> IO.inspect
   end
-  def to_cql(:delete_all, query, _opts) do
+  def to_cql(:delete_all, query, opts) do
+    named    = named(opts)
     from  = from(query)
-    where = where(query)
+    where = where(query, named)
     assemble(["DELETE", from, where])
   end
   def to_cql(:update_all, %{from: {from, _name}, prefix: prefix} = query, opts) do
+    named    = named(opts)
     fields = update_fields(query)
-    where  = where(query)
+    where  = where(query, named)
     assemble(["UPDATE", quote_table(prefix, from), using(opts), "SET", fields, where, if_op(opts)])
   end
   def to_cql(:insert, %{autogenerate_id: autogenerate, source: {prefix, source}}, fields, on_conflict, opts) do
@@ -120,6 +124,8 @@ defmodule Cassandra.Ecto.Adapter.CQL do
     |> Keyword.keys
     |> Enum.map_join(delimiter, &"#{quote_name(&1)} = ?")
 
+  defp named(opts), do: Keyword.get(opts, :named, nil)
+
   defp allow_filtering([allow_filtering: true]), do: "ALLOW FILTERING"
   defp allow_filtering(_), do: ""
 
@@ -143,8 +149,31 @@ defmodule Cassandra.Ecto.Adapter.CQL do
   defp distinct(_, query), do: error! query,
     "Cassandra adapter supports only distinct: true"
 
-  defp where(%Query{wheres: wheres} = query), do:
+  defp where(%Query{wheres: wheres} = query, named) when is_list(named) do
+    parts = boolean("WHERE", wheres, query)
+    |> String.split("?")
+    intersperse_named(parts, named)
+  end
+  defp where(%Query{wheres: wheres} = query, _named) do
     boolean("WHERE", wheres, query)
+  end
+
+  defp intersperse_named(parts, named) do
+    if length(parts) == length(named) + 1 do
+      intersperse_named(parts, named, "")
+    else
+      error! named, "Count of names doesn't correspond to count of where values"
+    end
+  end
+  defp intersperse_named([part1 | parts], [name | named], acc) do
+    name = ":" <> Atom.to_string(name)
+    intersperse_named(parts, named, acc <> part1 <> name)
+  end
+  defp intersperse_named([part1, part2], [name], acc) do
+    name = ":" <> Atom.to_string(name)
+    acc <> part1 <> name <> part2
+  end
+  defp intersperse_named([""], [], acc), do: acc
 
   defp order_by(%Query{order_bys: []}), do: []
   defp order_by(%Query{order_bys: order_bys} = query) do
